@@ -66,9 +66,8 @@ BEGIN
         TRUNCATE TABLE tmp_interpreted_parameters;
 
         INSERT INTO tmp_interpreted_parameters (id)
-        SELECT id
-        FROM stat.interpreted_parameters
-        WHERE request_id in (select id from tmp_requests);
+        SELECT I.id
+        FROM stat.interpreted_parameters I JOIN tmp_requests R ON R.id = I.request_id;
 
         DELETE
         FROM stat.filter F USING tmp_interpreted_parameters I
@@ -78,8 +77,9 @@ BEGIN
         RAISE INFO 'Deleted % filter', rowcount;
 
         DELETE
-        FROM stat.journey_sections JS USING tmp_requests R
-        WHERE JS.request_id=R.id;
+        FROM stat.journey_sections JS
+        WHERE JS.request_id IN (select id from tmp_requests LIMIT limit_tmp_req);
+        -- This fix is needed to have a good execution plan... don't ask me why
 
         GET DIAGNOSTICS rowcount = ROW_COUNT;
         RAISE INFO 'Deleted % journey_sections', rowcount;
