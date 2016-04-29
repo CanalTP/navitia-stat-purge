@@ -3,88 +3,117 @@ DROP FUNCTION IF EXISTS historic(int);
 CREATE OR REPLACE FUNCTION historic(val int) RETURNS boolean AS $$
 DECLARE
     t timestamp := CURRENT_DATE - val * INTERVAL '1 day';
+    min_request_date timestamp;
     rowcount int;
-BEGIN 
-    DELETE
-    FROM stat.coverages C USING stat.requests R
-    WHERE R.id=C.request_id
-      AND R.request_date < t;
+    limit_tmp_req int := 100000;
+    nb_tmp_req int;
+BEGIN
+    CREATE TEMPORARY TABLE tmp_requests (
+        id bigserial, CONSTRAINT tmp_requests_pkey PRIMARY KEY (id)
+    );
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % coverages', rowcount;
+    CREATE TEMPORARY TABLE tmp_interpreted_parameters (
+        id bigint, CONSTRAINT tmp_ip_pkey PRIMARY KEY (id)
+    );
 
-    DELETE
-    FROM stat.journey_request JR USING stat.requests R
-    WHERE R.id=JR.request_id
-      AND R.request_date < t;
+    LOOP
+        SELECT MIN(request_date) INTO min_request_date FROM stat.requests;
+        RAISE INFO 'Min request date = %', min_request_date;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % journey_request', rowcount;
+        TRUNCATE TABLE tmp_requests;
 
-    DELETE
-    FROM stat.errors E USING stat.requests R
-    WHERE R.id=E.request_id
-      AND R.request_date < t ;
+        INSERT INTO tmp_requests (id)
+        SELECT id
+        FROM stat.requests
+        WHERE request_date < t LIMIT limit_tmp_req;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % errors', rowcount;
+        SELECT COUNT(*) INTO nb_tmp_req FROM tmp_requests;
 
-    DELETE
-    FROM stat.parameters P USING stat.requests R
-    WHERE R.id=P.request_id
-      AND R.request_date < t ;
+        RAISE INFO 'Fetched % request ids', nb_tmp_req;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % parameters', rowcount;
+        EXIT WHEN nb_tmp_req = 0;
 
-    DELETE
-    FROM stat.filter F USING stat.interpreted_parameters I,
-                             stat.requests R
-    WHERE F.interpreted_parameter_id = I.id
-      AND I.request_id=R.id
-      AND R.request_date < t;
+        DELETE
+        FROM stat.coverages C USING tmp_requests R
+        WHERE R.id=C.request_id;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % filter', rowcount;
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % coverages', rowcount;
 
-    DELETE
-    FROM stat.journey_sections JS USING stat.requests R
-    WHERE JS.request_id=R.id
-      AND R.request_date < t;
+        DELETE
+        FROM stat.journey_request JR USING tmp_requests R
+        WHERE R.id=JR.request_id;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % journey_sections', rowcount;
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % journey_request', rowcount;
 
-    DELETE
-    FROM stat.interpreted_parameters I USING stat.requests R
-    WHERE R.id=I.request_id
-      AND R.request_date < t;
+        DELETE
+        FROM stat.errors E USING tmp_requests R
+        WHERE R.id=E.request_id;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % interpreted_parameters', rowcount;
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % errors', rowcount;
 
-    DELETE
-    FROM stat.journeys J USING stat.requests R
-    WHERE R.id=J.request_id
-      AND R.request_date < t;
+        DELETE
+        FROM stat.parameters P USING tmp_requests R
+        WHERE R.id=P.request_id;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % journeys', rowcount;
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % parameters', rowcount;
 
-    DELETE
-    FROM stat.info_response IR USING stat.requests R
-    WHERE R.id=IR.request_id
-      AND R.request_date < t;
+        TRUNCATE TABLE tmp_interpreted_parameters;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % info_response', rowcount;
+        INSERT INTO tmp_interpreted_parameters (id)
+        SELECT id
+        FROM stat.interpreted_parameters
+        WHERE request_id in (select id from tmp_requests);
 
-    DELETE
-    FROM stat.requests S
-    WHERE S.request_date < t;
+        DELETE
+        FROM stat.filter F USING tmp_interpreted_parameters I
+        WHERE F.interpreted_parameter_id = I.id;
 
-    GET DIAGNOSTICS rowcount = ROW_COUNT;
-    RAISE INFO 'Deleted % requests', rowcount;
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % filter', rowcount;
+
+        DELETE
+        FROM stat.journey_sections JS USING tmp_requests R
+        WHERE JS.request_id=R.id;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % journey_sections', rowcount;
+
+        DELETE
+        FROM stat.interpreted_parameters I USING tmp_requests R
+        WHERE R.id=I.request_id;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % interpreted_parameters', rowcount;
+
+        DELETE
+        FROM stat.journeys J USING tmp_requests R
+        WHERE R.id=J.request_id;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % journeys', rowcount;
+
+        DELETE
+        FROM stat.info_response IR USING tmp_requests R
+        WHERE R.id=IR.request_id;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % info_response', rowcount;
+
+        DELETE
+        FROM stat.requests S USING tmp_requests R
+        WHERE S.id = R.id;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        RAISE INFO 'Deleted % requests', rowcount;
+
+    END LOOP;
+
+    DROP TABLE tmp_interpreted_parameters;
+    DROP TABLE tmp_requests;
 
     RETURN true;
 END;  
