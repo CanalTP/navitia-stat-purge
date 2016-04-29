@@ -25,7 +25,9 @@ BEGIN
         INSERT INTO tmp_requests (id)
         SELECT id
         FROM stat.requests
-        WHERE request_date < t LIMIT limit_tmp_req;
+        WHERE request_date < t
+        ORDER BY id
+        LIMIT limit_tmp_req;
 
         SELECT COUNT(*) INTO nb_tmp_req FROM tmp_requests;
 
