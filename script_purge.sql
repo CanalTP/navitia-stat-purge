@@ -5,7 +5,7 @@ DECLARE
     t timestamp := CURRENT_DATE - val * INTERVAL '1 day';
     min_request_date timestamp;
     rowcount int;
-    limit_tmp_req int := 100000;
+    limit_tmp_req int := 10000;
     nb_tmp_req int;
 BEGIN
     CREATE TEMPORARY TABLE tmp_requests (
